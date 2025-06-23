@@ -1,0 +1,37 @@
+# Google Gemini API Configuration
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-pro
+
+# OpenAI API Configuration (for Whisper STT)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Speech-to-Text Configuration
+STT_SERVICE=whisper  # options: whisper, google
+STT_LANGUAGE=zh-TW   # language code
+
+# Text-to-Speech Configuration
+TTS_SERVICE=edge     # options: edge, gtts, openai
+TTS_VOICE=zh-TW-HsiaoChenNeural  # voice model
+TTS_SPEED=1.0        # speech speed
+
+# Web Scraping Configuration
+SCRAPING_INTERVAL=10  # seconds between auto-scrapes
+SELENIUM_DRIVER=chrome
+HEADLESS_MODE=true
+
+# Server Configuration
+HOST=0.0.0.0
+PORT=8000
+DEBUG=true
+
+# Security
+SECRET_KEY=your-secret-key-here
+
+# LeetCode Configuration
+LEETCODE_SESSION_COOKIE=your_leetcode_session_cookie
+LEETCODE_CSRF_TOKEN=your_leetcode_csrf_token
+
+# Interview Configuration
+DEFAULT_INTERVIEW_TYPE=technical  # technical, behavioral, system_design
+MAX_CONVERSATION_HISTORY=50
+INTERVIEW_TIMEOUT=3600  # seconds 

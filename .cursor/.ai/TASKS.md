@@ -4,7 +4,7 @@
 - [x] **ID 1: 專案架構設定與基礎配置** (Priority: critical)
 > 建立 Flask 應用基礎架構、配置檔案和基本專案結構
 
-- [ ] **ID 2: Gemini LLM 客戶端實現** (Priority: critical)
+- [x] **ID 2: Gemini LLM 客戶端實現** (Priority: critical)
 > Dependencies: 1
 > 實現與 Google Gemini API 的整合，提供基本的對話功能
 

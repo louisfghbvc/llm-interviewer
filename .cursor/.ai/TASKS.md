@@ -1,7 +1,7 @@
 # Project Tasks
 
 ## 第一週：核心面試功能
-- [ ] **ID 1: 專案架構設定與基礎配置** (Priority: critical)
+- [x] **ID 1: 專案架構設定與基礎配置** (Priority: critical)
 > 建立 Flask 應用基礎架構、配置檔案和基本專案結構
 
 - [ ] **ID 2: Gemini LLM 客戶端實現** (Priority: critical)

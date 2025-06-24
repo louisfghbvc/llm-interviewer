@@ -1,14 +1,14 @@
 ---
 id: 1
 title: '專案架構設定與基礎配置'
-status: pending
+status: completed
 priority: critical
 feature: Project Foundation
 dependencies: []
 assigned_agent: null
 created_at: "2025-06-23T15:07:24Z"
-started_at: null
-completed_at: null
+started_at: "2025-06-24T14:45:48Z"
+completed_at: "2025-06-24T14:48:27Z"
 error_log: null
 ---
 

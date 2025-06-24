@@ -8,7 +8,7 @@
 > Dependencies: 1
 > 實現與 Google Gemini API 的整合，提供基本的對話功能
 
-- [ ] **ID 3: 核心面試邏輯實現** (Priority: high)
+- [x] **ID 3: 核心面試邏輯實現** (Priority: high)
 > Dependencies: 2
 > 實現面試流程邏輯，包含不同面試類型的處理
 

@@ -9,6 +9,7 @@ import logging
 import os
 from config import Config
 from llm_client import LLMClient
+from interview_manager import InterviewManager
 
 # Configure logging
 logging.basicConfig(
@@ -24,18 +25,21 @@ app.config.from_object(Config)
 # Enable CORS for API endpoints
 CORS(app)
 
-# Initialize LLM client
+# Initialize LLM client and Interview Manager
 llm_client = None
+interview_manager = None
 
-def init_llm():
-    """Initialize LLM client"""
-    global llm_client
+def init_services():
+    """Initialize LLM client and Interview Manager"""
+    global llm_client, interview_manager
     try:
         llm_client = LLMClient()
-        logger.info("LLM client initialized successfully")
+        interview_manager = InterviewManager(llm_client)
+        logger.info("Services initialized successfully")
     except Exception as e:
-        logger.error(f"Failed to initialize LLM client: {e}")
+        logger.error(f"Failed to initialize services: {e}")
         llm_client = None
+        interview_manager = None
 
 # Routes
 @app.route('/')
@@ -50,7 +54,9 @@ def health_check():
         'status': 'ok',
         'service': 'AI Interview Simulator',
         'version': '1.0.0-mvp',
-        'llm_ready': llm_client is not None
+        'llm_ready': llm_client is not None,
+        'interview_manager_ready': interview_manager is not None,
+        'active_sessions': interview_manager.get_active_sessions_count() if interview_manager else 0
     })
 
 @app.route('/api/start_interview', methods=['POST'])
@@ -59,22 +65,28 @@ def start_interview():
     try:
         data = request.get_json() or {}
         interview_type = data.get('type', 'technical')
+        candidate_name = data.get('candidate_name', '')
+        position = data.get('position', '')
+        difficulty_level = data.get('difficulty_level', 'medium')
         
-        if not llm_client:
+        if not interview_manager:
             return jsonify({
                 'success': False, 
-                'error': 'LLM service not available'
+                'error': 'Interview service not available'
             }), 503
         
-        # Generate initial interview question
-        initial_question = llm_client.start_interview(interview_type)
+        # Create new interview session
+        session_id = interview_manager.create_session(
+            interview_type=interview_type,
+            candidate_name=candidate_name,
+            position=position,
+            difficulty_level=difficulty_level
+        )
         
-        return jsonify({
-            'success': True,
-            'session_id': 'mvp_session_1',  # Simplified session management
-            'interview_type': interview_type,
-            'question': initial_question
-        })
+        # Start the interview
+        result = interview_manager.start_interview(session_id)
+        
+        return jsonify(result)
         
     except Exception as e:
         logger.error(f"Error starting interview: {e}")
@@ -95,22 +107,24 @@ def send_message():
             }), 400
         
         message = data['message']
-        session_id = data.get('session_id', 'mvp_session_1')
+        session_id = data.get('session_id')
         
-        if not llm_client:
+        if not session_id:
             return jsonify({
                 'success': False, 
-                'error': 'LLM service not available'
+                'error': 'Session ID is required'
+            }), 400
+        
+        if not interview_manager:
+            return jsonify({
+                'success': False, 
+                'error': 'Interview service not available'
             }), 503
         
-        # Get response from LLM
-        response = llm_client.get_response(message, session_id)
+        # Process answer through interview manager
+        result = interview_manager.process_answer(session_id, message)
         
-        return jsonify({
-            'success': True,
-            'response': response,
-            'session_id': session_id
-        })
+        return jsonify(result)
         
     except Exception as e:
         logger.error(f"Error processing message: {e}")
@@ -121,7 +135,7 @@ def send_message():
 
 @app.route('/api/analyze_code', methods=['POST'])
 def analyze_code():
-    """Analyze submitted code"""
+    """Analyze submitted code during interview"""
     try:
         data = request.get_json()
         if not data or 'code' not in data:
@@ -132,20 +146,24 @@ def analyze_code():
         
         code = data['code']
         language = data.get('language', 'python')
+        session_id = data.get('session_id')
         
-        if not llm_client:
+        if not session_id:
             return jsonify({
                 'success': False, 
-                'error': 'LLM service not available'
+                'error': 'Session ID is required'
+            }), 400
+        
+        if not interview_manager:
+            return jsonify({
+                'success': False, 
+                'error': 'Interview service not available'
             }), 503
         
-        # Analyze code using LLM
-        analysis = llm_client.analyze_code(code, language)
+        # Submit code through interview manager
+        result = interview_manager.submit_code(session_id, code, language)
         
-        return jsonify({
-            'success': True,
-            'analysis': analysis
-        })
+        return jsonify(result)
         
     except Exception as e:
         logger.error(f"Error analyzing code: {e}")
@@ -159,28 +177,52 @@ def end_interview():
     """End interview session"""
     try:
         data = request.get_json() or {}
-        session_id = data.get('session_id', 'mvp_session_1')
+        session_id = data.get('session_id')
         
-        if not llm_client:
+        if not session_id:
             return jsonify({
                 'success': False, 
-                'error': 'LLM service not available'
+                'error': 'Session ID is required'
+            }), 400
+        
+        if not interview_manager:
+            return jsonify({
+                'success': False, 
+                'error': 'Interview service not available'
             }), 503
         
-        # Generate interview summary
-        summary = llm_client.end_interview(session_id)
+        # End interview through interview manager
+        result = interview_manager.end_interview(session_id)
         
-        return jsonify({
-            'success': True,
-            'summary': summary,
-            'session_id': session_id
-        })
+        return jsonify(result)
         
     except Exception as e:
         logger.error(f"Error ending interview: {e}")
         return jsonify({
             'success': False, 
             'error': 'Failed to end interview'
+        }), 500
+
+@app.route('/api/session_status/<session_id>')
+def get_session_status(session_id):
+    """Get current session status and progress"""
+    try:
+        if not interview_manager:
+            return jsonify({
+                'success': False, 
+                'error': 'Interview service not available'
+            }), 503
+        
+        # Get session status
+        result = interview_manager.get_session_status(session_id)
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        logger.error(f"Error getting session status: {e}")
+        return jsonify({
+            'success': False, 
+            'error': 'Failed to get session status'
         }), 500
 
 @app.errorhandler(404)
@@ -194,8 +236,8 @@ def internal_error(error):
     return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
-    # Initialize LLM client
-    init_llm()
+    # Initialize services
+    init_services()
     
     # Run Flask application
     port = int(os.environ.get('PORT', 5000))

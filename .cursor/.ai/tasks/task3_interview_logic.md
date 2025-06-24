@@ -1,15 +1,15 @@
 ---
 id: 3
 title: '核心面試邏輯實現'
-status: pending
+status: completed
 priority: high
 feature: Interview Core
 dependencies:
   - 2
-assigned_agent: null
+assigned_agent: claude
 created_at: "2025-06-23T15:07:24Z"
-started_at: null
-completed_at: null
+started_at: "2025-06-24T15:09:59Z"
+completed_at: "2025-06-24T15:20:03Z"
 error_log: null
 ---
 

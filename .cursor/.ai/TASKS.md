@@ -21,7 +21,7 @@
 > Dependencies: 4
 > 實現簡單的程式碼輸入框和基本驗證
 
-- [ ] **ID 6: 程式碼分析邏輯** (Priority: high)
+- [x] **ID 6: 程式碼分析邏輯** (Priority: high) ✅
 > Dependencies: 2, 5
 > 整合 LLM 進行程式碼分析和評估
 

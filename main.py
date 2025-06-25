@@ -11,6 +11,7 @@ from config import Config
 from llm_client import LLMClient
 from interview_manager import InterviewManager
 from code_handler import CodeHandler
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -431,11 +432,9 @@ def get_supported_languages():
                 'error': 'Code handler service not available'
             }), 503
         
-        languages = code_handler.get_supported_languages()
-        
         return jsonify({
             'success': True,
-            'languages': languages
+            'languages': code_handler.get_supported_languages()
         })
         
     except Exception as e:
@@ -443,6 +442,227 @@ def get_supported_languages():
         return jsonify({
             'success': False,
             'error': 'Failed to get supported languages'
+        }), 500
+
+# Enhanced LLM Code Analysis API Endpoints
+@app.route('/api/llm_analyze_code', methods=['POST'])
+def llm_analyze_code():
+    """Direct LLM code analysis without interview context"""
+    try:
+        data = request.get_json()
+        if not data or 'code' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Code is required'
+            }), 400
+        
+        code = data['code']
+        language = data.get('language', 'python')
+        
+        if not llm_client:
+            return jsonify({
+                'success': False,
+                'error': 'LLM service not available'
+            }), 503
+        
+        # Perform LLM analysis
+        analysis_result = llm_client.analyze_code(code, language)
+        
+        return jsonify({
+            'success': True,
+            'analysis': analysis_result
+        })
+        
+    except Exception as e:
+        logger.error(f"Error in LLM code analysis: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to analyze code with LLM'
+        }), 500
+
+@app.route('/api/generate_coding_problem', methods=['POST'])
+def generate_coding_problem():
+    """Generate a coding problem using LLM"""
+    try:
+        data = request.get_json() or {}
+        difficulty = data.get('difficulty', 'medium')
+        topic = data.get('topic', 'algorithms')
+        language = data.get('language', 'python')
+        
+        if not llm_client:
+            return jsonify({
+                'success': False,
+                'error': 'LLM service not available'
+            }), 503
+        
+        # Generate coding problem prompt
+        problem_prompt = f"""
+請生成一個 {difficulty} 難度的 {topic} 程式設計問題，適合 {language} 語言：
+
+要求：
+1. 清楚的問題描述
+2. 輸入輸出範例
+3. 約束條件
+4. 預期時間複雜度
+5. 提示（可選）
+
+請用繁體中文描述，格式化為結構化的程式設計問題。
+        """
+        
+        # Get problem from LLM
+        problem_response = llm_client._call_gemini(problem_prompt)
+        
+        return jsonify({
+            'success': True,
+            'problem': {
+                'difficulty': difficulty,
+                'topic': topic,
+                'language': language,
+                'description': problem_response,
+                'generated_at': time.time()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating coding problem: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to generate coding problem'
+        }), 500
+
+@app.route('/api/evaluate_code_solution', methods=['POST'])
+def evaluate_code_solution():
+    """Evaluate code solution against a specific problem"""
+    try:
+        data = request.get_json()
+        if not data or 'code' not in data or 'problem' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Code and problem description are required'
+            }), 400
+        
+        code = data['code']
+        problem = data['problem']
+        language = data.get('language', 'python')
+        
+        if not llm_client:
+            return jsonify({
+                'success': False,
+                'error': 'LLM service not available'
+            }), 503
+        
+        # Enhanced evaluation prompt
+        evaluation_prompt = f"""
+請評估以下程式碼解答：
+
+問題描述：
+{problem}
+
+解答程式碼 ({language}):
+```{language}
+{code}
+```
+
+請提供：
+1. 正確性評估（是否解決了問題）
+2. 程式碼品質評分（0-100分）
+3. 時間和空間複雜度分析
+4. 具體的優點和缺點
+5. 改進建議
+6. 替代解法提示
+7. 綜合評級（A-F）
+
+請用繁體中文提供詳細的評估報告。
+        """
+        
+        # Get evaluation from LLM
+        evaluation_response = llm_client._call_gemini(evaluation_prompt)
+        
+        # Also run basic code validation
+        validation_result = None
+        if code_handler:
+            validation_result = code_handler.validate_code(code, language)
+        
+        return jsonify({
+            'success': True,
+            'evaluation': {
+                'llm_analysis': evaluation_response,
+                'basic_validation': {
+                    'is_valid': validation_result.is_valid if validation_result else None,
+                    'errors': validation_result.errors if validation_result else [],
+                    'warnings': validation_result.warnings if validation_result else [],
+                    'complexity_score': validation_result.complexity_score if validation_result else None
+                } if validation_result else None,
+                'language': language,
+                'evaluated_at': time.time()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error evaluating code solution: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to evaluate code solution'
+        }), 500
+
+@app.route('/api/interview_code_feedback', methods=['POST'])
+def interview_code_feedback():
+    """Get interview-style feedback on code submission"""
+    try:
+        data = request.get_json()
+        if not data or 'code' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Code is required'
+            }), 400
+        
+        code = data['code']
+        language = data.get('language', 'python')
+        session_id = data.get('session_id')
+        
+        if not llm_client:
+            return jsonify({
+                'success': False,
+                'error': 'LLM service not available'
+            }), 503
+        
+        # Generate interview-style feedback
+        feedback_prompt = f"""
+你是一位經驗豐富的技術面試官。請對以下程式碼提供面試風格的反饋：
+
+程式碼 ({language}):
+```{language}
+{code}
+```
+
+請以面試官的語調提供：
+1. 程式碼的優點認可
+2. 需要改進的地方（以問題形式引導）
+3. 後續技術問題（測試深度理解）
+4. 建設性的改進建議
+5. 鼓勵性的總結
+
+保持友善但專業的面試官語調，用繁體中文回應。
+        """
+        
+        # Get feedback from LLM
+        feedback_response = llm_client._call_gemini(feedback_prompt)
+        
+        return jsonify({
+            'success': True,
+            'feedback': {
+                'interviewer_response': feedback_response,
+                'language': language,
+                'session_id': session_id,
+                'timestamp': time.time()
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting interview code feedback: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to get interview feedback'
         }), 500
 
 @app.errorhandler(404)

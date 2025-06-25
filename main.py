@@ -10,6 +10,7 @@ import os
 from config import Config
 from llm_client import LLMClient
 from interview_manager import InterviewManager
+from code_handler import CodeHandler
 
 # Configure logging
 logging.basicConfig(
@@ -25,21 +26,24 @@ app.config.from_object(Config)
 # Enable CORS for API endpoints
 CORS(app)
 
-# Initialize LLM client and Interview Manager
+# Initialize services
 llm_client = None
 interview_manager = None
+code_handler = None
 
 def init_services():
-    """Initialize LLM client and Interview Manager"""
-    global llm_client, interview_manager
+    """Initialize all services"""
+    global llm_client, interview_manager, code_handler
     try:
         llm_client = LLMClient()
         interview_manager = InterviewManager(llm_client)
-        logger.info("Services initialized successfully")
+        code_handler = CodeHandler()
+        logger.info("All services initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize services: {e}")
         llm_client = None
         interview_manager = None
+        code_handler = None
 
 # Routes
 @app.route('/')
@@ -56,7 +60,9 @@ def health_check():
         'version': '1.0.0-mvp',
         'llm_ready': llm_client is not None,
         'interview_manager_ready': interview_manager is not None,
-        'active_sessions': interview_manager.get_active_sessions_count() if interview_manager else 0
+        'code_handler_ready': code_handler is not None,
+        'active_sessions': interview_manager.get_active_sessions_count() if interview_manager else 0,
+        'supported_languages': code_handler.get_supported_languages() if code_handler else []
     })
 
 @app.route('/api/start_interview', methods=['POST'])
@@ -223,6 +229,220 @@ def get_session_status(session_id):
         return jsonify({
             'success': False, 
             'error': 'Failed to get session status'
+        }), 500
+
+# Code Input and Management API Endpoints
+@app.route('/api/validate_code', methods=['POST'])
+def validate_code():
+    """Validate code syntax and format"""
+    try:
+        data = request.get_json()
+        if not data or 'code' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Code is required'
+            }), 400
+        
+        code = data['code']
+        language = data.get('language', 'python')
+        
+        if not code_handler:
+            return jsonify({
+                'success': False,
+                'error': 'Code validation service not available'
+            }), 503
+        
+        # Validate code
+        validation_result = code_handler.validate_code(code, language)
+        
+        return jsonify({
+            'success': True,
+            'validation': {
+                'is_valid': validation_result.is_valid,
+                'language': validation_result.language,
+                'errors': validation_result.errors,
+                'warnings': validation_result.warnings,
+                'line_count': validation_result.line_count,
+                'char_count': validation_result.char_count,
+                'complexity_score': validation_result.complexity_score,
+                'security_issues': validation_result.security_issues,
+                'suggestions': validation_result.suggestions
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error validating code: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to validate code'
+        }), 500
+
+@app.route('/api/store_code', methods=['POST'])
+def store_code():
+    """Store code snippet for a session"""
+    try:
+        data = request.get_json()
+        if not data or 'code' not in data or 'session_id' not in data:
+            return jsonify({
+                'success': False,
+                'error': 'Code and session_id are required'
+            }), 400
+        
+        code = data['code']
+        session_id = data['session_id']
+        language = data.get('language', 'python')
+        problem_description = data.get('problem_description', '')
+        is_solution = data.get('is_solution', False)
+        
+        if not code_handler:
+            return jsonify({
+                'success': False,
+                'error': 'Code storage service not available'
+            }), 503
+        
+        # Store code snippet
+        snippet_id = code_handler.store_code_snippet(
+            session_id=session_id,
+            code=code,
+            language=language,
+            problem_description=problem_description,
+            is_solution=is_solution
+        )
+        
+        # Get the stored snippet for validation info
+        snippet = code_handler.get_code_snippet(snippet_id)
+        
+        return jsonify({
+            'success': True,
+            'snippet_id': snippet_id,
+            'validation': {
+                'is_valid': snippet.validation_result.is_valid,
+                'errors': snippet.validation_result.errors,
+                'warnings': snippet.validation_result.warnings,
+                'security_issues': snippet.validation_result.security_issues
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error storing code: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to store code'
+        }), 500
+
+@app.route('/api/get_code/<snippet_id>')
+def get_code(snippet_id):
+    """Retrieve code snippet by ID"""
+    try:
+        if not code_handler:
+            return jsonify({
+                'success': False,
+                'error': 'Code retrieval service not available'
+            }), 503
+        
+        snippet = code_handler.get_code_snippet(snippet_id)
+        
+        if not snippet:
+            return jsonify({
+                'success': False,
+                'error': 'Code snippet not found'
+            }), 404
+        
+        return jsonify({
+            'success': True,
+            'snippet': {
+                'snippet_id': snippet.snippet_id,
+                'session_id': snippet.session_id,
+                'code': snippet.code,
+                'language': snippet.language,
+                'timestamp': snippet.timestamp,
+                'is_solution': snippet.is_solution,
+                'problem_description': snippet.problem_description,
+                'validation': {
+                    'is_valid': snippet.validation_result.is_valid,
+                    'errors': snippet.validation_result.errors,
+                    'warnings': snippet.validation_result.warnings,
+                    'line_count': snippet.validation_result.line_count,
+                    'char_count': snippet.validation_result.char_count,
+                    'complexity_score': snippet.validation_result.complexity_score,
+                    'security_issues': snippet.validation_result.security_issues,
+                    'suggestions': snippet.validation_result.suggestions
+                }
+            }
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrieving code: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to retrieve code'
+        }), 500
+
+@app.route('/api/session_code/<session_id>')
+def get_session_code(session_id):
+    """Get all code snippets for a session"""
+    try:
+        if not code_handler:
+            return jsonify({
+                'success': False,
+                'error': 'Code retrieval service not available'
+            }), 503
+        
+        snippets = code_handler.get_session_snippets(session_id)
+        
+        snippets_data = []
+        for snippet in snippets:
+            snippets_data.append({
+                'snippet_id': snippet.snippet_id,
+                'code': snippet.code,
+                'language': snippet.language,
+                'timestamp': snippet.timestamp,
+                'is_solution': snippet.is_solution,
+                'problem_description': snippet.problem_description,
+                'validation': {
+                    'is_valid': snippet.validation_result.is_valid,
+                    'errors': snippet.validation_result.errors,
+                    'warnings': snippet.validation_result.warnings,
+                    'complexity_score': snippet.validation_result.complexity_score
+                }
+            })
+        
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'snippets': snippets_data,
+            'total_snippets': len(snippets_data)
+        })
+        
+    except Exception as e:
+        logger.error(f"Error retrieving session code: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to retrieve session code'
+        }), 500
+
+@app.route('/api/supported_languages')
+def get_supported_languages():
+    """Get list of supported programming languages"""
+    try:
+        if not code_handler:
+            return jsonify({
+                'success': False,
+                'error': 'Code handler service not available'
+            }), 503
+        
+        languages = code_handler.get_supported_languages()
+        
+        return jsonify({
+            'success': True,
+            'languages': languages
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting supported languages: {e}")
+        return jsonify({
+            'success': False,
+            'error': 'Failed to get supported languages'
         }), 500
 
 @app.errorhandler(404)

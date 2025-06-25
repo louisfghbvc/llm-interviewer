@@ -17,7 +17,7 @@
 > 建立面試對話的 REST API 端點
 
 ## 第二週：程式碼分析功能
-- [ ] **ID 5: 程式碼輸入介面** (Priority: medium)
+- [x] **ID 5: 程式碼輸入介面** (Priority: medium)
 > Dependencies: 4
 > 實現簡單的程式碼輸入框和基本驗證
 

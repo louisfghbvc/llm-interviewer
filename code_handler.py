@@ -6,6 +6,9 @@ Code Handler Module for AI Interview Simulator
 import re
 import ast
 import logging
+import subprocess
+import tempfile
+import os
 from typing import Dict, List, Optional, Tuple, Any
 from dataclasses import dataclass
 from enum import Enum
@@ -79,7 +82,11 @@ class CodeHandler:
                 r'os\.',
                 r'subprocess',
                 r'eval\s*\(',
-                r'exec\s*\('
+                r'exec\s*\(',
+                r'fopen\s*\(',
+                r'fstream',
+                r'ifstream',
+                r'ofstream'
             ],
             'network_operations': [
                 r'import\s+requests',
@@ -89,16 +96,24 @@ class CodeHandler:
                 r'requests\.',
                 r'urllib\.',
                 r'http\.',
-                r'fetch\s*\('
+                r'fetch\s*\(',
+                r'#include\s*<socket',
+                r'#include\s*<netinet'
             ],
             'system_calls': [
                 r'system\s*\(',
                 r'shell_exec',
                 r'passthru',
                 r'__import__',
-                r'importlib'
+                r'importlib',
+                r'exec\s*\(',
+                r'popen\s*\(',
+                r'#include\s*<cstdlib>'
             ]
         }
+        
+        # Check if clang is available for C++ validation
+        self.clang_available = self._check_clang_availability()
         
         # Language-specific validation patterns
         self.language_patterns = {
@@ -129,6 +144,22 @@ class CodeHandler:
                     r'public\s+class\s+\w+',
                     r'public\s+static\s+void\s+main',
                     r'System\.out\.print'
+                ]
+            },
+            CodeLanguage.CPP: {
+                'file_extensions': ['.cpp', '.cc', '.cxx', '.h', '.hpp'],
+                'keywords': ['class', 'struct', 'namespace', 'template', 'public', 'private', 'protected', 
+                           'virtual', 'const', 'static', 'if', 'for', 'while', 'try', 'catch'],
+                'syntax_patterns': [
+                    r'#include\s*<[^>]+>',
+                    r'#include\s*"[^"]+"',
+                    r'class\s+\w+',
+                    r'struct\s+\w+',
+                    r'namespace\s+\w+',
+                    r'template\s*<',
+                    r'std::\w+',
+                    r'cout\s*<<',
+                    r'cin\s*>>'
                 ]
             }
         }
@@ -368,6 +399,8 @@ class CodeHandler:
                 errors, warnings = self._validate_python_syntax(code)
             elif language == CodeLanguage.JAVASCRIPT:
                 errors, warnings = self._validate_javascript_syntax(code)
+            elif language == CodeLanguage.CPP:
+                errors, warnings = self._validate_cpp_syntax_with_clang(code)
             # Add more language validations as needed
             
         except Exception as e:
@@ -436,8 +469,31 @@ class CodeHandler:
             complexity += code.count('if') * 2  # Conditional statements
             complexity += code.count('for') * 2  # Loops
             complexity += code.count('while') * 2
-            complexity += code.count('def') * 3  # Function definitions
-            complexity += code.count('class') * 4  # Class definitions
+            
+            # Language-specific complexity calculations
+            if language.lower() == 'python':
+                complexity += code.count('def') * 3  # Function definitions
+                complexity += code.count('class') * 4  # Class definitions
+            elif language.lower() == 'cpp':
+                complexity += len([line for line in lines if 'int ' in line or 'void ' in line or 'double ' in line]) * 3
+                complexity += code.count('class') * 4
+                complexity += code.count('struct') * 3
+                complexity += code.count('template') * 5
+                complexity += code.count('namespace') * 2
+            elif language.lower() in ['javascript', 'typescript']:
+                complexity += code.count('function') * 3
+                complexity += code.count('class') * 4
+                complexity += code.count('=>') * 2  # Arrow functions
+            elif language.lower() == 'java':
+                complexity += len([line for line in lines if 'public ' in line or 'private ' in line]) * 3
+                complexity += code.count('class') * 4
+                complexity += code.count('interface') * 4
+            
+            # Common complexity indicators for all languages
+            complexity += code.count('switch') * 3
+            complexity += code.count('case') * 1
+            complexity += code.count('try') * 2
+            complexity += code.count('catch') * 2
             
             # Normalize to 0-100 scale
             return min(complexity, 100)
@@ -470,6 +526,15 @@ class CodeHandler:
             if language.lower() == 'python':
                 if 'print(' in code and code.count('print(') > 3:
                     suggestions.append("考慮使用 logging 模組取代過多的 print 語句")
+            elif language.lower() == 'cpp':
+                if 'using namespace std' in code:
+                    suggestions.append("考慮使用 std:: 前綴而非 'using namespace std' 以避免命名空間污染")
+                if 'cout' in code and '#include <iostream>' not in code:
+                    suggestions.append("使用 cout 需要 #include <iostream>")
+                if code.count('new ') > 0 and code.count('delete ') == 0:
+                    suggestions.append("使用 new 分配記憶體後記得使用 delete 釋放，或考慮使用智慧指標")
+                if 'malloc' in code or 'free' in code:
+                    suggestions.append("C++ 中建議使用 new/delete 或智慧指標，而非 malloc/free")
             
         except Exception as e:
             logger.warning(f"Error generating suggestions: {e}")
@@ -510,6 +575,145 @@ class CodeHandler:
         except Exception:
             return code  # Return original if formatting fails
     
+    def _check_clang_availability(self) -> bool:
+        """Check if clang is available on the system"""
+        try:
+            result = subprocess.run(['clang++', '--version'], 
+                                  capture_output=True, 
+                                  text=True, 
+                                  timeout=5)
+            return result.returncode == 0
+        except (subprocess.SubprocessError, FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+    
+    def _validate_cpp_syntax_with_clang(self, code: str) -> Tuple[List[str], List[str]]:
+        """Validate C++ syntax using clang compiler"""
+        errors = []
+        warnings = []
+        
+        # If clang is not available, fall back to basic validation
+        if not self.clang_available:
+            return self._validate_cpp_syntax_basic(code)
+        
+        try:
+            # Create a temporary file with C++ code
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.cpp', delete=False) as temp_file:
+                temp_file.write(code)
+                temp_file_path = temp_file.name
+            
+            try:
+                # Run clang++ to check syntax
+                result = subprocess.run([
+                    'clang++', 
+                    '-fsyntax-only',  # Only check syntax, don't compile
+                    '-std=c++17',     # Use C++17 standard
+                    '-Wall',          # Enable warnings
+                    temp_file_path
+                ], capture_output=True, text=True, timeout=10)
+                
+                if result.stderr:
+                    # Parse clang error messages
+                    stderr_lines = result.stderr.strip().split('\n')
+                    for line in stderr_lines:
+                        if 'error:' in line:
+                            # Extract error message
+                            error_msg = line.split('error:')[-1].strip()
+                            errors.append(f"C++ 語法錯誤: {error_msg}")
+                        elif 'warning:' in line:
+                            # Extract warning message
+                            warning_msg = line.split('warning:')[-1].strip()
+                            warnings.append(f"C++ 警告: {warning_msg}")
+                
+                # If no errors from clang, but return code is not 0
+                if result.returncode != 0 and not errors:
+                    errors.append("C++ 程式碼包含語法錯誤")
+                    
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_file_path)
+                except OSError:
+                    pass
+                    
+        except subprocess.TimeoutExpired:
+            warnings.append("C++ 語法檢查超時")
+        except Exception as e:
+            logger.warning(f"Error using clang for C++ validation: {e}")
+            warnings.append("C++ 語法檢查過程中發生問題")
+        
+        return errors, warnings
+    
+    def _validate_cpp_syntax_basic(self, code: str) -> Tuple[List[str], List[str]]:
+        """Basic C++ syntax validation (fallback when clang is not available)"""
+        errors = []
+        warnings = []
+        
+        try:
+            lines = code.splitlines()
+            
+            # Basic bracket matching for C++
+            brackets = {'(': ')', '[': ']', '{': '}'}
+            stack = []
+            line_num = 0
+            
+            for line in lines:
+                line_num += 1
+                # Skip comments
+                if '//' in line:
+                    line = line[:line.index('//')]
+                
+                for char in line:
+                    if char in brackets:
+                        stack.append((brackets[char], line_num))
+                    elif char in brackets.values():
+                        if not stack:
+                            errors.append(f"C++ 第 {line_num} 行: 多餘的 '{char}'")
+                            break
+                        expected_char, _ = stack.pop()
+                        if expected_char != char:
+                            errors.append(f"C++ 第 {line_num} 行: 括號不匹配，期望 '{expected_char}' 但找到 '{char}'")
+                            break
+            
+            # Check for unclosed brackets
+            if stack:
+                for char, line_num in stack:
+                    errors.append(f"C++ 第 {line_num} 行: 未閉合的括號 '{char}'")
+            
+            # Check for basic C++ syntax patterns
+            code_lower = code.lower()
+            
+            # Check for main function
+            if 'int main' not in code and 'void main' not in code and len(lines) > 5:
+                warnings.append("C++ 程式通常需要 main 函數作為程式入口點")
+            
+            # Check for missing includes
+            has_includes = any(line.strip().startswith('#include') for line in lines)
+            has_std_usage = 'std::' in code or 'cout' in code or 'cin' in code
+            
+            if has_std_usage and not has_includes:
+                warnings.append("使用了標準函式庫但未發現 #include 指令")
+            
+            # Check for missing semicolons (basic check)
+            for i, line in enumerate(lines, 1):
+                stripped = line.strip()
+                if stripped and not stripped.startswith(('#', '//', '}')):
+                    # Lines that typically should end with semicolon
+                    if (any(keyword in stripped for keyword in ['int ', 'char ', 'double ', 'float ', 'bool ']) 
+                        or 'cout' in stripped or 'cin' in stripped
+                        or stripped.startswith('return')):
+                        if not stripped.endswith((';', '{', '}')):
+                            warnings.append(f"第 {i} 行可能缺少分號")
+            
+            # Check for namespace usage
+            if 'using namespace std' not in code and 'std::' not in code and ('cout' in code or 'cin' in code):
+                warnings.append("使用了 cout/cin 但未指定 std 命名空間")
+                
+        except Exception as e:
+            logger.warning(f"Error in basic C++ syntax validation: {e}")
+            warnings.append("C++ 語法檢查過程中發生問題")
+        
+        return errors, warnings
+
     def _generate_snippet_id(self, session_id: str, code: str) -> str:
         """Generate unique snippet ID"""
         content = f"{session_id}_{code}_{time.time()}"

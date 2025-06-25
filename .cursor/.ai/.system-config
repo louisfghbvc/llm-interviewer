@@ -1,0 +1,22 @@
+# System Configuration
+memory_bank_enabled: true
+detection_timestamp: "2025-06-25T21:45:00Z"
+detection_reason: "Multi-feature AI system with architecture decisions and 3-week timeline"
+detection_keywords: ["架構", "整合", "系統", "邏輯", "擴展性"]
+mode: "memory_bank"
+plan_hash: "ai_interview_simulator_mvp"
+
+# Auto-detection results
+mb_score: 6
+tm_score: 1
+complexity_indicators:
+  - "12 interdependent tasks"
+  - "Multi-phase development (3 weeks)"
+  - "LLM integration requirements"
+  - "API and frontend architecture"
+  - "Scalable foundation requirements"
+
+# Project classification
+project_type: "complex_ai_system"
+estimated_duration: "3_weeks"
+team_size: "single_developer" 

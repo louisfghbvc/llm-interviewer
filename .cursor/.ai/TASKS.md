@@ -12,7 +12,7 @@
 > Dependencies: 2
 > 實現面試流程邏輯，包含不同面試類型的處理
 
-- [ ] **ID 4: 基礎 Web API 端點** (Priority: high)
+- [x] **ID 4: 基礎 Web API 端點** (Priority: high)
 > Dependencies: 2, 3
 > 建立面試對話的 REST API 端點
 
